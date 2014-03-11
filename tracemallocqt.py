@@ -126,9 +126,9 @@ class MyWindow(QtGui.QWidget):
         self.setWindowTitle("Tracemalloc")
 
         hbox = QtGui.QHBoxLayout()
-        file_info1 = QtGui.QLabel(app.filename1)
+        file_info1 = QtGui.QLabel(os.path.basename(app.filename1))
         hbox.addWidget(file_info1)
-        file_info2 = QtGui.QLabel(app.filename2)
+        file_info2 = QtGui.QLabel(os.path.basename(app.filename2))
         hbox.addWidget(file_info2)
         hboxw = QtGui.QWidget()
         hboxw.setLayout(hbox)
@@ -144,11 +144,12 @@ class MyWindow(QtGui.QWidget):
         # set column width to fit contents (set font first!)
         table_view.resizeColumnsToContents()
         # enable sorting
+        table_view.verticalHeader().hide()
         table_view.sortByColumn(self.stats_model.get_default_sort_column(), QtCore.Qt.DescendingOrder)
         table_view.setSortingEnabled(True)
 
         total = tracemalloc._format_size(self.stats_model.total, False)
-        summary = QtGui.QLabel("Total: %s" % total)
+        summary = QtGui.QLabel("Lines: %s - Total: %s" % (len(stats), total))
 
         layout = QtGui.QVBoxLayout(self)
         layout.addWidget(hboxw)
@@ -183,7 +184,7 @@ class Application:
             sys.exit(1)
 
         self.snapshot1 = MySnapshot(self.filename1)
-        self.group_by = "filename"
+        self.group_by = "lineno"
         if self.filename2:
             self.snapshot2 = MySnapshot(self.filename2)
         else:
