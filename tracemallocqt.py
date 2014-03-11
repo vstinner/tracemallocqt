@@ -194,9 +194,10 @@ class StatsModel(QtCore.QAbstractTableModel):
 
 
 class HistoryState:
-    def __init__(self, group_by, filters):
+    def __init__(self, group_by, filters, cumulative):
         self.group_by = group_by
         self.filters = filters
+        self.cumulative = cumulative
 
 
 class History:
@@ -205,8 +206,7 @@ class History:
         self.states = []
         self.index = -1
 
-    def append(self):
-        state = self.stats.get_state()
+    def append(self, state):
         if self.index != len(self.states) - 1:
             del self.states[self.index+1:]
         self.states.append(state)
@@ -234,17 +234,19 @@ class StatsManager:
     # index in the combo box
     GROUP_BY_FILENAME = 0
     GROUP_BY_LINENO = 1
-    GROUP_BY_TRACEBACK = 1
+    GROUP_BY_TRACEBACK = 2
 
     def __init__(self, window, app):
         self.app = app
         self.window = window
         self.filename_parts = 2
+        self._auto_refresh = False
 
         self.filters = []
         self.history = History(self)
 
         self.view = QtGui.QTableView(window)
+        self.cumulative_checkbox = QtGui.QCheckBox(window.tr("Cumulative sizes"), window)
         self.group_by = QtGui.QComboBox(window)
         self.group_by.addItems([
             window.tr("Filename"),
@@ -263,17 +265,25 @@ class StatsManager:
 
         window.connect(self.group_by, QtCore.SIGNAL("currentIndexChanged(int)"), self.group_by_changed)
         window.connect(self.view, QtCore.SIGNAL("doubleClicked(const QModelIndex&)"), self.double_clicked)
+        window.connect(self.cumulative_checkbox, QtCore.SIGNAL("stateChanged(int)"), self.change_cumulative)
 
-        self.history.append()
+        self.append_history()
+        self._auto_refresh = True
 
-    def get_state(self):
+    def append_history(self):
         group_by = self.group_by.currentIndex()
         filters = self.filters[:]
-        return HistoryState(group_by, filters)
+        cumulative = self.cumulative_checkbox.checkState()
+        state = HistoryState(group_by, filters, cumulative)
+        self.history.append(state)
 
     def restore_state(self, state):
         self.filters = state.filters[:]
+        self._auto_refresh = False
+        self.cumulative_checkbox.setCheckState(state.cumulative)
         self.group_by.setCurrentIndex(state.group_by)
+        self._auto_refresh = True
+        self.refresh()
 
     def format_filename(self, filename):
         parts = filename.split(os.path.sep)
@@ -287,6 +297,11 @@ class StatsManager:
 
     def refresh(self):
         group_by = self.get_group_by()
+        if group_by != 'traceback':
+            cumulative = (self.cumulative_checkbox.checkState() == QtCore.Qt.Checked)
+        else:
+            # FIXME: add visual feedback
+            cumulative = False
         snapshot1 = self.app.snapshot1.snapshot
         if self.filters:
             snapshot1 = snapshot1.filter_traces(self.filters)
@@ -294,9 +309,9 @@ class StatsManager:
             snapshot2 = self.app.snapshot2.snapshot
             if self.filters:
                 snapshot2 = snapshot2.filter_traces(self.filters)
-            stats = snapshot2.compare_to(snapshot1, group_by)
+            stats = snapshot2.compare_to(snapshot1, group_by, cumulative)
         else:
-            stats = snapshot1.statistics(group_by)
+            stats = snapshot1.statistics(group_by, cumulative)
         self.model = StatsModel(self, stats)
         self.view.setModel(self.model)
         self.view.resizeColumnsToContents()
@@ -336,14 +351,42 @@ class StatsManager:
         group_by = self.get_group_by()
         if group_by == 'filename':
             self.filters.append(tracemalloc.Filter(True, stat.traceback[0].filename))
+            self._auto_refresh = False
             self.group_by.setCurrentIndex(self.GROUP_BY_LINENO)
+            self.append_history()
+            self._auto_refresh = True
+            self.refresh()
         elif group_by == 'lineno':
             # Replace filter by filename with filter by line
-            self.filters[-1] = tracemalloc.Filter(True, stat.traceback[0].filename, stat.traceback[0].lineno)
+            new_filter = tracemalloc.Filter(True, stat.traceback[0].filename, stat.traceback[0].lineno)
+            if self.filters:
+                old_filter = self.filters[-1]
+                replace = (old_filter.inclusive == new_filter.inclusive
+                           and old_filter.filename_pattern == new_filter.filename_pattern
+                           and old_filter.lineno == None
+                           and old_filter.all_frames == new_filter.all_frames)
+            else:
+                replace = False
+            if replace:
+                self.filters[-1] = new_filter
+            else:
+                self.filters.append(new_filter)
+            self._auto_refresh = False
             self.group_by.setCurrentIndex(self.GROUP_BY_TRACEBACK)
+            self.append_history()
+            self._auto_refresh = True
+            self.refresh()
 
     def group_by_changed(self, index):
-        self.history.append()
+        if not self._auto_refresh:
+            return
+        self.append_history()
+        self.refresh()
+
+    def change_cumulative(self, state):
+        if not self._auto_refresh:
+            return
+        self.append_history()
         self.refresh()
 
 
@@ -390,6 +433,7 @@ class MainWindow(QtGui.QMainWindow):
 
         layout = QtGui.QVBoxLayout(widget)
         layout.addWidget(hboxw)
+        layout.addWidget(self.stats.cumulative_checkbox)
         layout.addWidget(group_by_box)
         layout.addWidget(self.stats.filters_label)
         layout.addWidget(self.stats.view)
