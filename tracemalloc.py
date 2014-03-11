@@ -293,6 +293,10 @@ class Filter:
         self.lineno = lineno
         self.all_frames = all_frames
 
+    def __repr__(self):
+        return ('<Filter inclusive=%r filename=%r lineno=%r all_frames=%r>'
+                % (self.inclusive, self._filename_pattern, self.lineno, self.all_frames))
+
     @property
     def filename_pattern(self):
         return self._filename_pattern
