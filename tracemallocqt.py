@@ -18,6 +18,10 @@ MORE_TEXT = u'...'
 def escape_html(text):
     return xml.sax.saxutils.escape(text)
 
+# FIXME
+def tr(text):
+    return text
+
 class StatsModel(QtCore.QAbstractTableModel):
     def __init__(self, manager, stats):
         QtCore.QAbstractTableModel.__init__(self, manager.window)
@@ -239,7 +243,8 @@ class StatsManager:
     def __init__(self, window, app):
         self.app = app
         self.window = window
-        self.filename_parts = 2
+        self.snapshots = window.snapshots
+        self.filename_parts = 3
         self._auto_refresh = False
 
         self.filters = []
@@ -266,9 +271,14 @@ class StatsManager:
         window.connect(self.group_by, QtCore.SIGNAL("currentIndexChanged(int)"), self.group_by_changed)
         window.connect(self.view, QtCore.SIGNAL("doubleClicked(const QModelIndex&)"), self.double_clicked)
         window.connect(self.cumulative_checkbox, QtCore.SIGNAL("stateChanged(int)"), self.change_cumulative)
+        window.connect(self.snapshots.load_button, QtCore.SIGNAL("clicked(bool)"), self.load_snapshots)
 
         self.append_history()
         self._auto_refresh = True
+
+    def load_snapshots(self, checked):
+        print("LOAD")
+        self.refresh()
 
     def append_history(self):
         group_by = self.group_by.currentIndex()
@@ -305,13 +315,8 @@ class StatsManager:
         else:
             # FIXME: add visual feedback
             cumulative = False
-        snapshot1 = self.app.snapshot1.snapshot
-        if self.filters:
-            snapshot1 = snapshot1.filter_traces(self.filters)
-        if self.app.snapshot2:
-            snapshot2 = self.app.snapshot2.snapshot
-            if self.filters:
-                snapshot2 = snapshot2.filter_traces(self.filters)
+        snapshot1, snapshot2 = self.snapshots.load_snapshots(self.filters)
+        if snapshot2 is not None:
             stats = snapshot2.compare_to(snapshot1, group_by, cumulative)
         else:
             stats = snapshot1.statistics(group_by, cumulative)
@@ -396,40 +401,112 @@ class StatsManager:
         self.refresh()
 
 
+class MySnapshot:
+    def __init__(self, filename):
+        self.filename = filename
+        ts = int(os.stat(filename).st_ctime)
+        self.timestamp = datetime.datetime.fromtimestamp(ts)
+        self.snapshot = None
+
+    def load(self):
+        if self.snapshot is None:
+            with open(self.filename, "rb") as fp:
+                self.snapshot = pickle.load(fp)
+        return self.snapshot
+
+    # FIXME: unload
+
+    def get_label(self):
+        name = os.path.basename(self.filename)
+        infos = []
+        if self.snapshot is not None:
+            infos.append(tr("%s traces") % len(self.snapshot.traces))
+        infos.append(str(self.timestamp))
+        return "%s (%s)" % (name, ', '.join(infos))
+
+
+class SnapshotManager:
+    def __init__(self, parent, filenames):
+        self.snapshots = [MySnapshot(filename) for filename in filenames]
+
+        items = [snapshot.get_label() for snapshot in self.snapshots]
+        print(items)
+        self.combo1 = QtGui.QComboBox(parent)
+        self.combo1.addItems(items)
+        self.combo1.setCurrentIndex(0)
+
+        items = ['(none)'] + items
+        self.combo2 = QtGui.QComboBox(parent)
+        self.combo2.addItems(items)
+        if len(self.snapshots) > 1:
+            self.combo2.setCurrentIndex(2)
+        else:
+            self.combo2.setCurrentIndex(0)
+
+        self.load_button = QtGui.QPushButton(tr("Load"), parent)
+        self.load_button.setEnabled(True)
+
+        #hbox = QtGui.QHBoxLayout(widget)
+        #text = app.snapshot1.get_label()
+        #text = self.tr("Snapshot 1: %s") % text
+        #file_info1 = QtGui.QLabel(text)
+        #hbox.addWidget(file_info1)
+        #if app.snapshot2:
+        #    text = app.snapshot2.get_label()
+        #else:
+        #    text = self.tr('(none)')
+        #text = self.tr("Snapshot 2: %s") % text
+        #file_info2 = QtGui.QLabel(text)
+        #hbox.addWidget(file_info2)
+        #hboxw = QtGui.QWidget()
+        #hboxw.setLayout(hbox)
+
+    def load_snapshots(self, filters):
+        index1 = self.combo1.currentIndex()
+        index2 = self.combo2.currentIndex()
+        snapshot1 = self.snapshots[index1].load()
+        snapshot2 = None
+        if index2:
+            index2 -= 1
+            if index2 != index1:
+                snapshot2 = self.snapshots[index2].load()
+            else:
+                self.combo2.setCurrentIndex(0)
+        # FIXME: incremental filter
+        if filters:
+            snapshot1 = snapshot1.filter_traces(filters)
+        if snapshot2 is not None:
+            if filters:
+                snapshot2 = snapshot2.filter_traces(filters)
+        return (snapshot1, snapshot2)
+
+
 class MainWindow(QtGui.QMainWindow):
-    def __init__(self, app):
+    def __init__(self, app, filenames):
         QtGui.QMainWindow.__init__(self)
         self.setGeometry(300, 200, 1300, 450)
         self.setWindowTitle("Tracemalloc")
 
-        action_previous = QtGui.QAction(self.tr("Previous"), self)
-        action_next = QtGui.QAction(self.tr("Next"), self)
+        # central widget
+        widget = QtGui.QWidget(self)
 
+        # actions
+        action_previous = QtGui.QAction(self.tr("Previous"), self)
+        self.connect(action_previous, QtCore.SIGNAL("triggered(bool)"), self.go_previous)
+        action_next = QtGui.QAction(self.tr("Next"), self)
+        self.connect(action_next, QtCore.SIGNAL("triggered(bool)"), self.go_next)
+
+        # toolbar
         toolbar = self.addToolBar(self.tr("Navigation"))
         toolbar.addAction(action_previous)
         toolbar.addAction(action_next)
 
+        # create classes
+        self.snapshots = SnapshotManager(self, filenames)
         self.stats = StatsManager(self, app)
         self.history = self.stats.history
-        self.connect(action_previous, QtCore.SIGNAL("triggered(bool)"), self.go_previous)
-        self.connect(action_next, QtCore.SIGNAL("triggered(bool)"), self.go_next)
 
-        widget = QtGui.QWidget(self)
-        hbox = QtGui.QHBoxLayout(widget)
-        text = app.snapshot1.get_label()
-        text = self.tr("Snapshot 1: %s") % text
-        file_info1 = QtGui.QLabel(text)
-        hbox.addWidget(file_info1)
-        if app.snapshot2:
-            text = app.snapshot2.get_label()
-        else:
-            text = self.tr('(none)')
-        text = self.tr("Snapshot 2: %s") % text
-        file_info2 = QtGui.QLabel(text)
-        hbox.addWidget(file_info2)
-        hboxw = QtGui.QWidget()
-        hboxw.setLayout(hbox)
-
+        # Group by
         hbox = QtGui.QHBoxLayout(widget)
         hbox.addWidget(QtGui.QLabel(self.tr("Group by:")))
         self.stats.group_by.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum))
@@ -437,8 +514,11 @@ class MainWindow(QtGui.QMainWindow):
         group_by_box = QtGui.QWidget()
         group_by_box.setLayout(hbox)
 
+        # Main layout
         layout = QtGui.QVBoxLayout(widget)
-        layout.addWidget(hboxw)
+        layout.addWidget(self.snapshots.combo1)
+        layout.addWidget(self.snapshots.combo2)
+        layout.addWidget(self.snapshots.load_button)
         layout.addWidget(self.stats.cumulative_checkbox)
         layout.addWidget(group_by_box)
         layout.addWidget(self.stats.filters_label)
@@ -453,42 +533,17 @@ class MainWindow(QtGui.QMainWindow):
     def go_next(self, checked):
         self.history.go_next()
 
-class MySnapshot:
-    def __init__(self, filename):
-        self.filename = filename
-        ts = int(os.stat(filename).st_ctime)
-        self.timestamp = datetime.datetime.fromtimestamp(ts)
-        with open(filename, "rb") as fp:
-            self.snapshot = pickle.load(fp)
-
-    def get_label(self):
-        return ("%s (%s traces, %s)"
-                % (os.path.basename(self.filename),
-                   len(self.snapshot.traces),
-                   self.timestamp))
-
-
 class Application:
     def __init__(self):
-        if len(sys.argv) == 2:
-            filename1 = sys.argv[1]
-            filename2 = None
-        elif len(sys.argv) == 3:
-            filename1 = sys.argv[1]
-            filename2 = sys.argv[2]
+        if len(sys.argv) >= 2:
+            filenames = sys.argv[1:]
         else:
-            print("usage: %s snapshot1.pickle [snapshot2.pickle]")
+            print("usage: %s snapshot1.pickle [snapshot2.pickle snapshot3.pickle ...]")
             sys.exit(1)
-
-        self.snapshot1 = MySnapshot(filename1)
-        if filename2:
-            self.snapshot2 = MySnapshot(filename2)
-        else:
-            self.snapshot2 = None
 
         # Create a Qt application
         self.app = QtGui.QApplication(sys.argv)
-        self.window = MainWindow(self)
+        self.window = MainWindow(self, filenames)
 
     def main(self):
         self.window.show()
