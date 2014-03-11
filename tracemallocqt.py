@@ -65,7 +65,7 @@ class StatsModel(QtCore.QAbstractTableModel):
         if role == SORT_ROLE:
             return size
         if role == QtCore.Qt.ToolTipRole:
-            if size < 10 * 1024:
+            if abs(size) < 10 * 1024:
                 return None
             if diff:
                 return "%+i" % size
@@ -243,6 +243,7 @@ class StatsManager:
         self._auto_refresh = False
 
         self.filters = []
+#        self.filters.append(tracemalloc.Filter(False, "<frozen importlib._bootstrap>"))
         self.history = History(self)
 
         self.view = QtGui.QTableView(window)
@@ -257,11 +258,10 @@ class StatsManager:
 
         self.filters_label = QtGui.QLabel(window)
         self.summary = QtGui.QLabel(window)
-        self.refresh()
         self.view.verticalHeader().hide()
-        self.view.sortByColumn(self.model.get_default_sort_column(), QtCore.Qt.DescendingOrder)
         self.view.resizeColumnsToContents()
         self.view.setSortingEnabled(True)
+        self.refresh()
 
         window.connect(self.group_by, QtCore.SIGNAL("currentIndexChanged(int)"), self.group_by_changed)
         window.connect(self.view, QtCore.SIGNAL("doubleClicked(const QModelIndex&)"), self.double_clicked)
@@ -295,10 +295,13 @@ class StatsManager:
         index = self.group_by.currentIndex()
         return self.GROUP_BY[index]
 
+    def get_cumulative(self):
+        return (self.cumulative_checkbox.checkState() == QtCore.Qt.Checked)
+
     def refresh(self):
         group_by = self.get_group_by()
         if group_by != 'traceback':
-            cumulative = (self.cumulative_checkbox.checkState() == QtCore.Qt.Checked)
+            cumulative = self.get_cumulative()
         else:
             # FIXME: add visual feedback
             cumulative = False
@@ -315,6 +318,7 @@ class StatsManager:
         self.model = StatsModel(self, stats)
         self.view.setModel(self.model)
         self.view.resizeColumnsToContents()
+        self.view.sortByColumn(self.model.get_default_sort_column(), QtCore.Qt.DescendingOrder)
 
         if self.filters:
             filters = []
@@ -322,6 +326,8 @@ class StatsManager:
                 text = self.format_filename(filter.filename_pattern)
                 if filter.lineno:
                     text = "%s:%s" % (text, filter.lineno)
+                if filter.all_frames:
+                    text += self.window.tr(" (any frame)")
                 if filter.inclusive:
                     text = self.window.tr("include %s") % text
                 else:
@@ -350,7 +356,8 @@ class StatsManager:
             return
         group_by = self.get_group_by()
         if group_by == 'filename':
-            self.filters.append(tracemalloc.Filter(True, stat.traceback[0].filename))
+            all_frames = self.get_cumulative()
+            self.filters.append(tracemalloc.Filter(True, stat.traceback[0].filename, all_frames=all_frames))
             self._auto_refresh = False
             self.group_by.setCurrentIndex(self.GROUP_BY_LINENO)
             self.append_history()
@@ -358,13 +365,12 @@ class StatsManager:
             self.refresh()
         elif group_by == 'lineno':
             # Replace filter by filename with filter by line
-            new_filter = tracemalloc.Filter(True, stat.traceback[0].filename, stat.traceback[0].lineno)
+            new_filter = tracemalloc.Filter(True, stat.traceback[0].filename, stat.traceback[0].lineno, all_frames=False)
             if self.filters:
                 old_filter = self.filters[-1]
                 replace = (old_filter.inclusive == new_filter.inclusive
                            and old_filter.filename_pattern == new_filter.filename_pattern
-                           and old_filter.lineno == None
-                           and old_filter.all_frames == new_filter.all_frames)
+                           and old_filter.lineno == None)
             else:
                 replace = False
             if replace:
