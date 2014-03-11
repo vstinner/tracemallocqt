@@ -23,7 +23,7 @@ class StatsModel(QtCore.QAbstractTableModel):
         QtCore.QAbstractTableModel.__init__(self, manager.window)
 
         self.manager = manager
-        self.group_by = manager.group_by
+        self.group_by = manager.get_group_by()
         self.stats = stats
         self.diff = isinstance(stats[0], tracemalloc.StatisticDiff)
         self.total = sum(stat.size for stat in stats)
@@ -196,7 +196,7 @@ class StatsModel(QtCore.QAbstractTableModel):
 class HistoryState:
     def __init__(self, group_by, filters):
         self.group_by = group_by
-        self.filters = filters[:]
+        self.filters = filters
 
 
 class History:
@@ -206,7 +206,7 @@ class History:
         self.index = -1
 
     def append(self):
-        state = HistoryState(self.stats.group_by, self.stats.filters)
+        state = self.stats.get_state()
         if self.index != len(self.states) - 1:
             del self.states[self.index+1:]
         self.states.append(state)
@@ -214,9 +214,7 @@ class History:
 
     def restore_state(self):
         state = self.states[self.index]
-        self.stats.group_by = state.group_by
-        self.stats.filters = state.filters[:]
-        self.stats.refresh()
+        self.stats.restore_state(state)
 
     def go_next(self):
         if self.index >= len(self.states) - 1:
@@ -232,17 +230,29 @@ class History:
 
 
 class StatsManager:
+    GROUP_BY = ['filename', 'lineno', 'traceback']
+    # index in the combo box
+    GROUP_BY_FILENAME = 0
+    GROUP_BY_LINENO = 1
+    GROUP_BY_TRACEBACK = 1
+
     def __init__(self, window, app):
         self.app = app
         self.window = window
-        self.group_by = 'filename'
         self.filename_parts = 2
 
         self.filters = []
         self.history = History(self)
-        self.history.append()
 
         self.view = QtGui.QTableView(window)
+        self.group_by = QtGui.QComboBox(window)
+        self.group_by.addItems([
+            window.tr("Filename"),
+            window.tr("Line number"),
+            window.tr("Traceback"),
+        ])
+        self.group_by.setCurrentIndex(self.GROUP_BY_FILENAME)
+
         self.filters_label = QtGui.QLabel(window)
         self.summary = QtGui.QLabel(window)
         self.refresh()
@@ -251,13 +261,32 @@ class StatsManager:
         self.view.resizeColumnsToContents()
         self.view.setSortingEnabled(True)
 
+        window.connect(self.group_by, QtCore.SIGNAL("currentIndexChanged(int)"), self.group_by_changed)
+        window.connect(self.view, QtCore.SIGNAL("doubleClicked(const QModelIndex&)"), self.double_clicked)
+
+        self.history.append()
+
+    def get_state(self):
+        group_by = self.group_by.currentIndex()
+        filters = self.filters[:]
+        return HistoryState(group_by, filters)
+
+    def restore_state(self, state):
+        self.filters = state.filters[:]
+        self.group_by.setCurrentIndex(state.group_by)
+
     def format_filename(self, filename):
         parts = filename.split(os.path.sep)
         if len(parts) > self.filename_parts:
             parts = [MORE_TEXT] + parts[-self.filename_parts:]
         return os.path.join(*parts)
 
+    def get_group_by(self):
+        index = self.group_by.currentIndex()
+        return self.GROUP_BY[index]
+
     def refresh(self):
+        group_by = self.get_group_by()
         snapshot1 = self.app.snapshot1.snapshot
         if self.filters:
             snapshot1 = snapshot1.filter_traces(self.filters)
@@ -265,9 +294,9 @@ class StatsManager:
             snapshot2 = self.app.snapshot2.snapshot
             if self.filters:
                 snapshot2 = snapshot2.filter_traces(self.filters)
-            stats = snapshot2.compare_to(snapshot1, self.group_by)
+            stats = snapshot2.compare_to(snapshot1, group_by)
         else:
-            stats = snapshot1.statistics(self.group_by)
+            stats = snapshot1.statistics(group_by)
         self.model = StatsModel(self, stats)
         self.view.setModel(self.model)
         self.view.resizeColumnsToContents()
@@ -291,9 +320,9 @@ class StatsManager:
 
         total = tracemalloc._format_size(self.model.total, False)
         lines = len(self.model.stats)
-        if self.group_by == 'filename':
+        if group_by == 'filename':
             lines = self.window.tr("Files: %s") % lines
-        elif self.group_by == 'lineno':
+        elif group_by == 'lineno':
             lines = self.window.tr("Lines: %s") % lines
         else:
             lines = self.window.tr("Tracebacks: %s") % lines
@@ -304,17 +333,18 @@ class StatsManager:
         stat = self.model.get_stat(index)
         if stat is None:
             return
-        if self.group_by == 'filename':
+        group_by = self.get_group_by()
+        if group_by == 'filename':
             self.filters.append(tracemalloc.Filter(True, stat.traceback[0].filename))
-            self.group_by = 'lineno'
-            self.history.append()
-            self.refresh()
-        elif self.group_by == 'lineno':
+            self.group_by.setCurrentIndex(self.GROUP_BY_LINENO)
+        elif group_by == 'lineno':
             # Replace filter by filename with filter by line
             self.filters[-1] = tracemalloc.Filter(True, stat.traceback[0].filename, stat.traceback[0].lineno)
-            self.group_by = 'traceback'
-            self.history.append()
-            self.refresh()
+            self.group_by.setCurrentIndex(self.GROUP_BY_TRACEBACK)
+
+    def group_by_changed(self, index):
+        self.history.append()
+        self.refresh()
 
 
 class MainWindow(QtGui.QMainWindow):
@@ -332,7 +362,6 @@ class MainWindow(QtGui.QMainWindow):
 
         self.stats = StatsManager(self, app)
         self.history = self.stats.history
-        self.connect(self.stats.view, QtCore.SIGNAL("doubleClicked(const QModelIndex&)"), self.stats.double_clicked)
         self.connect(action_previous, QtCore.SIGNAL("triggered(bool)"), self.go_previous)
         self.connect(action_next, QtCore.SIGNAL("triggered(bool)"), self.go_next)
 
@@ -352,8 +381,16 @@ class MainWindow(QtGui.QMainWindow):
         hboxw = QtGui.QWidget()
         hboxw.setLayout(hbox)
 
+        hbox = QtGui.QHBoxLayout(widget)
+        hbox.addWidget(QtGui.QLabel(self.tr("Group by:")))
+        self.stats.group_by.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum))
+        hbox.addWidget(self.stats.group_by)
+        group_by_box = QtGui.QWidget()
+        group_by_box.setLayout(hbox)
+
         layout = QtGui.QVBoxLayout(widget)
         layout.addWidget(hboxw)
+        layout.addWidget(group_by_box)
         layout.addWidget(self.stats.filters_label)
         layout.addWidget(self.stats.view)
         layout.addWidget(self.stats.summary)
