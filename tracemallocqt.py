@@ -1,14 +1,12 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
-# Import PySide classes
-import functools
-import sys
-import os.path
-import operator
 from PySide import QtCore
 from PySide import QtGui
-
+import functools
+import operator
+import os.path
 import pickle
+import sys
 import tracemalloc
 
 class MyTableModel(QtCore.QAbstractTableModel):
