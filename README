@@ -1,0 +1,37 @@
+Qt GUI for tracemalloc.
+
+* tracemallocqt: https://bitbucket.org/haypo/tracemallocqt
+* tracemalloc for Python 2.5-3.3: http://pytracemalloc.readthedocs.org/
+* tracemalloc in Python 3.4: http://docs.python.org/dev/library/tracemalloc.html
+
+Author: Victor Stinner <victor.stinner@gmail.com>
+
+
+Usage
+=====
+
+Run your application, enable tracemalloc and dump snapshots with::
+
+    import pickle, tracemalloc
+    tracemalloc.start()
+    # ... run your application ...
+    snapshot = tracemalloc.take_snapshot()
+    with open(filename, "wb") as fp:
+        pickle.dump(snapshot, fp, 2)
+    snapshot = None
+
+Then open a snapshot with::
+
+    python tracemallocqt.py snapshot.pickle
+
+Compare two snapshots with::
+
+    python tracemallocqt.py snapshot.pickle
+
+
+Dependencies
+============
+
+* Python 2
+* PySide: http://qt-project.org/wiki/Get-PySide
+
