@@ -16,13 +16,20 @@ class MyTableModel(QtCore.QAbstractTableModel):
         QtCore.QAbstractTableModel.__init__(self, parent, *args)
         self.stats = stats
         self.diff = isinstance(stats[0], tracemalloc.StatisticDiff)
+        self.total = sum(stat.size for stat in stats)
         if self.diff:
-            self.headers = ["Filename", "Size", "Size Diff", "Count", "Count Diff", "Item Size"]
+            self.headers = ["Filename", "Size", "Size Diff", "Count", "Count Diff", "Item Size", "%Total"]
         else:
-            self.headers = ["Filename", "Size", "Count", "Item Size"]
+            self.headers = ["Filename", "Size", "Count", "Item Size", "%Total"]
         self.format_size = tracemalloc._format_size
         self.filename_parts = 2
         self.show_lineno = (group_by != "filename")
+
+    def get_default_sort_column(self):
+        if self.diff:
+            return 2
+        else:
+            return 1
 
     def rowCount(self, parent):
         return len(self.stats)
@@ -30,7 +37,7 @@ class MyTableModel(QtCore.QAbstractTableModel):
     def columnCount(self, parent):
         return len(self.headers)
 
-    def _data(self, column, stat):
+    def _data(self, column, format, stat):
         if column == 0:
             frame = stat.traceback[0]
             filename = frame.filename
@@ -43,23 +50,46 @@ class MyTableModel(QtCore.QAbstractTableModel):
                 return "%s:%s" % (filename, lineno)
             else:
                 return filename
+        if column == 1:
+            size = stat.size
+            if not format:
+                return size
+            return tracemalloc._format_size(size, False)
         if self.diff:
-            if column == 1:
-                return stat.size
             if column == 2:
-                return stat.size_diff
+                size = stat.size_diff
+                if not format:
+                    return size
+                return tracemalloc._format_size(size, True)
             if column == 3:
                 return stat.count
             if column == 4:
                 return stat.count_diff
+            if column == 5:
+                # Item Size
+                if stat.count:
+                    size = stat.size / stat.count
+                    if not format:
+                        return size
+                    return tracemalloc._format_size(size, False)
+                else:
+                    return 0
         else:
-            if column == 1:
-                return stat.size
             if column == 2:
                 return stat.count
-        # Item Size
-        if stat.count:
-            return stat.size / stat.count
+            if column == 3:
+                # Item Size
+                if not stat.count:
+                    return 0
+                size = stat.size / stat.count
+                if not format:
+                    return size
+                return tracemalloc._format_size(size, False)
+        if self.total:
+            percent = float(stat.size) / self.total
+            if not format:
+                return percent
+            return "%.1f %%" % (percent * 100.0)
         else:
             return 0
 
@@ -70,7 +100,7 @@ class MyTableModel(QtCore.QAbstractTableModel):
             return None
         stat = self.stats[index.row()]
         column = index.column()
-        return self._data(column, stat)
+        return self._data(column, True, stat)
 
     def headerData(self, col, orientation, role):
         if orientation == QtCore.Qt.Horizontal and role == QtCore.Qt.DisplayRole:
@@ -81,7 +111,7 @@ class MyTableModel(QtCore.QAbstractTableModel):
         """sort table by given column number col"""
         self.emit(QtCore.SIGNAL("layoutAboutToBeChanged()"))
         self.stats = sorted(self.stats,
-            key=functools.partial(self._data, col))
+            key=functools.partial(self._data, col, False))
         # FIXME
         if order == QtCore.Qt.DescendingOrder:
             self.stats.reverse()
@@ -114,10 +144,10 @@ class MyWindow(QtGui.QWidget):
         # set column width to fit contents (set font first!)
         table_view.resizeColumnsToContents()
         # enable sorting
+        table_view.sortByColumn(self.stats_model.get_default_sort_column(), QtCore.Qt.DescendingOrder)
         table_view.setSortingEnabled(True)
 
-        total = sum(stat.size for stat in stats)
-        total = tracemalloc._format_size(total, False)
+        total = tracemalloc._format_size(self.stats_model.total, False)
         summary = QtGui.QLabel("Total: %s" % total)
 
         layout = QtGui.QVBoxLayout(self)
