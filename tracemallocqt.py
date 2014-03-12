@@ -143,7 +143,7 @@ class StatsModel(QtCore.QAbstractTableModel):
             if column == 4:
                 if role == QtCore.Qt.ToolTipRole:
                     return None
-                return stat.count_diff
+                return "%+d" % stat.count_diff
             if column == 5:
                 # Item Size
                 if stat.count:
@@ -277,7 +277,6 @@ class StatsManager:
         self._auto_refresh = True
 
     def load_snapshots(self, checked):
-        print("LOAD")
         self.refresh()
 
     def append_history(self):
@@ -404,62 +403,65 @@ class StatsManager:
 class MySnapshot:
     def __init__(self, filename):
         self.filename = filename
-        ts = int(os.stat(filename).st_ctime)
+        ts = int(os.stat(filename).st_mtime)
         self.timestamp = datetime.datetime.fromtimestamp(ts)
         self.snapshot = None
+        self.ntraces = None
+        self.total = None
 
     def load(self):
         if self.snapshot is None:
             with open(self.filename, "rb") as fp:
                 self.snapshot = pickle.load(fp)
+            self.ntraces = len(self.snapshot.traces)
+            self.total = sum(trace.size for trace in self.snapshot.traces)
         return self.snapshot
 
-    # FIXME: unload
+    def unload(self):
+        self.snapshot = None
 
     def get_label(self):
+        if self.ntraces is None:
+            print("Process snapshot %s..." % self.filename)
+            # fill ntraces and total
+            self.load()
+            self.unload()
+            print("Process snapshot %s... done" % self.filename)
+
         name = os.path.basename(self.filename)
-        infos = []
-        if self.snapshot is not None:
-            infos.append(tr("%s traces") % len(self.snapshot.traces))
-        infos.append(str(self.timestamp))
+        infos = [
+            tracemalloc._format_size(self.total, False),
+            tr("%s traces") % self.ntraces,
+            str(self.timestamp),
+        ]
         return "%s (%s)" % (name, ', '.join(infos))
 
 
 class SnapshotManager:
-    def __init__(self, parent, filenames):
+    def __init__(self, parent):
+        self.snapshots = []
+        self.combo1 = QtGui.QComboBox(parent)
+        self.combo2 = QtGui.QComboBox(parent)
+        self.load_button = QtGui.QPushButton(tr("Load"), parent)
+        self.load_button.setEnabled(True)
+
+    def set_filenames(self, filenames):
         self.snapshots = [MySnapshot(filename) for filename in filenames]
 
+        self.snapshots[0].load()
+        if len(self.snapshots) > 1:
+            self.snapshots[1].load()
+
         items = [snapshot.get_label() for snapshot in self.snapshots]
-        print(items)
-        self.combo1 = QtGui.QComboBox(parent)
         self.combo1.addItems(items)
         self.combo1.setCurrentIndex(0)
 
         items = ['(none)'] + items
-        self.combo2 = QtGui.QComboBox(parent)
         self.combo2.addItems(items)
         if len(self.snapshots) > 1:
             self.combo2.setCurrentIndex(2)
         else:
             self.combo2.setCurrentIndex(0)
-
-        self.load_button = QtGui.QPushButton(tr("Load"), parent)
-        self.load_button.setEnabled(True)
-
-        #hbox = QtGui.QHBoxLayout(widget)
-        #text = app.snapshot1.get_label()
-        #text = self.tr("Snapshot 1: %s") % text
-        #file_info1 = QtGui.QLabel(text)
-        #hbox.addWidget(file_info1)
-        #if app.snapshot2:
-        #    text = app.snapshot2.get_label()
-        #else:
-        #    text = self.tr('(none)')
-        #text = self.tr("Snapshot 2: %s") % text
-        #file_info2 = QtGui.QLabel(text)
-        #hbox.addWidget(file_info2)
-        #hboxw = QtGui.QWidget()
-        #hboxw.setLayout(hbox)
 
     def load_snapshots(self, filters):
         index1 = self.combo1.currentIndex()
@@ -502,7 +504,8 @@ class MainWindow(QtGui.QMainWindow):
         toolbar.addAction(action_next)
 
         # create classes
-        self.snapshots = SnapshotManager(self, filenames)
+        self.snapshots = SnapshotManager(self)
+        self.snapshots.set_filenames(filenames)
         self.stats = StatsManager(self, app)
         self.history = self.stats.history
 
