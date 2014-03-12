@@ -6,7 +6,6 @@ import datetime
 import functools
 import io
 import linecache
-import operator
 import os.path
 import pickle
 import sys
@@ -247,7 +246,7 @@ class StatsManager:
         self.app = app
         self.window = window
         self.snapshots = window.snapshots
-        self.text = window.text
+        self.source = window.source
         self.filename_parts = 3
         self._auto_refresh = False
 
@@ -363,7 +362,9 @@ class StatsManager:
         stat = self.model.get_stat(index)
         if stat is None:
             return
-        self.text.show_stat(stat)
+        self.source.set_traceback(stat.traceback,
+                                  self.get_group_by() != 'filename')
+        self.source.show_frame(stat.traceback[0])
 
     def double_clicked(self, index):
         stat = self.model.get_stat(index)
@@ -496,11 +497,30 @@ class SnapshotManager:
         return (snapshot1, snapshot2)
 
 
-class TextManager:
-    def __init__(self, parent):
-        self.text_edit = QtGui.QTextEdit(parent)
+class SourceCodeManager:
+    def __init__(self, window):
+        self.text_edit = QtGui.QTextEdit(window)
         self.text_edit.setReadOnly(True)
         self._current_file = None
+        # FIXME: write an optimized model
+        self.traceback = None
+        self.traceback_model = QtGui.QStringListModel()
+        self.traceback_view = QtGui.QListView(window)
+        self.traceback_view.setModel(self.traceback_model)
+        window.connect(self.traceback_view, QtCore.SIGNAL("clicked(const QModelIndex&)"), self.click_frame)
+
+    def click_frame(self, index):
+        row = index.row()
+        frame = self.traceback[row]
+        self.show_frame(frame)
+
+    def set_traceback(self, traceback, show_lineno):
+        self.traceback = traceback
+        if show_lineno:
+            lines = ['%s:%s' % (frame.filename, frame.lineno) for frame in traceback]
+        else:
+            lines = [frame.filename for frame in traceback]
+        self.traceback_model.setStringList(lines)
 
     def load_file(self, filename):
         if self._current_file == filename:
@@ -512,7 +532,7 @@ class TextManager:
             lines = []
             with io.open(filename, 'r', encoding=encoding) as fp:
                 for lineno, line in enumerate(fp, 1):
-                    lines.append(u'% 3d: %s' % (lineno, line.rstrip()))
+                    lines.append(u'%d: %s' % (lineno, line.rstrip()))
         except IOError:
             return False
         text = u'\n'.join(lines)
@@ -527,8 +547,7 @@ class TextManager:
         cursor.select(QtGui.QTextCursor.BlockUnderCursor)
         self.text_edit.setTextCursor(cursor)
 
-    def show_stat(self, stat):
-        frame = stat.traceback[0]
+    def show_frame(self, frame):
         filename = frame.filename
         if filename.startswith("<") and filename.startswith(">"):
             return
@@ -544,9 +563,6 @@ class MainWindow(QtGui.QMainWindow):
         self.setGeometry(300, 200, 1300, 450)
         self.setWindowTitle("Tracemalloc")
 
-        # central widget
-        widget = QtGui.QWidget(self)
-
         # actions
         action_previous = QtGui.QAction(self.tr("Previous"), self)
         self.connect(action_previous, QtCore.SIGNAL("triggered(bool)"), self.go_previous)
@@ -561,12 +577,12 @@ class MainWindow(QtGui.QMainWindow):
         # create classes
         self.snapshots = SnapshotManager(self)
         self.snapshots.set_filenames(filenames)
-        self.text = TextManager(self)
+        self.source = SourceCodeManager(self)
         self.stats = StatsManager(self, app)
         self.history = self.stats.history
 
         # snapshots
-        hbox = QtGui.QHBoxLayout(widget)
+        hbox = QtGui.QHBoxLayout()
         hbox.addWidget(QtGui.QLabel(self.tr("Snapshot:")))
         hbox.addWidget(self.snapshots.combo1)
         hbox.addWidget(QtGui.QLabel(self.tr("compared to:")))
@@ -576,7 +592,7 @@ class MainWindow(QtGui.QMainWindow):
         snap_box.setLayout(hbox)
 
         # Group by
-        hbox = QtGui.QHBoxLayout(widget)
+        hbox = QtGui.QHBoxLayout()
         hbox.addWidget(QtGui.QLabel(self.tr("Group by:")))
         hbox.addWidget(self.stats.group_by)
         hbox.addWidget(self.stats.cumulative_checkbox)
@@ -585,15 +601,27 @@ class MainWindow(QtGui.QMainWindow):
         group_by_box = QtGui.QWidget()
         group_by_box.setLayout(hbox)
 
-        # Main layout
-        layout = QtGui.QVBoxLayout(widget)
+        # Source
+        source_splitter = QtGui.QSplitter()
+        source_splitter.addWidget(self.source.traceback_view)
+        self.source.traceback_view.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Minimum))
+        source_splitter.addWidget(self.source.text_edit)
+        self.source.text_edit.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding))
+
+        # Top widgets
+        layout = QtGui.QVBoxLayout()
         layout.addWidget(snap_box)
         layout.addWidget(group_by_box)
         layout.addWidget(self.stats.view)
         layout.addWidget(self.stats.summary)
-        layout.addWidget(self.text.text_edit)
-        widget.setLayout(layout)
-        self.setCentralWidget(widget)
+        top_widget = QtGui.QWidget(self)
+        top_widget.setLayout(layout)
+
+        # main splitter
+        main_splitter = QtGui.QSplitter(QtCore.Qt.Vertical)
+        main_splitter.addWidget(top_widget)
+        main_splitter.addWidget(source_splitter)
+        self.setCentralWidget(main_splitter)
 
     def go_previous(self, checked):
         self.history.go_previous()
