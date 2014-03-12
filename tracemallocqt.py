@@ -441,7 +441,9 @@ class SnapshotManager:
     def __init__(self, parent):
         self.snapshots = []
         self.combo1 = QtGui.QComboBox(parent)
+        self.combo1.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum))
         self.combo2 = QtGui.QComboBox(parent)
+        self.combo2.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum))
         self.load_button = QtGui.QPushButton(tr("Load"), parent)
         self.load_button.setEnabled(True)
 
@@ -509,22 +511,30 @@ class MainWindow(QtGui.QMainWindow):
         self.stats = StatsManager(self, app)
         self.history = self.stats.history
 
+        # snapshots
+        hbox = QtGui.QHBoxLayout(widget)
+        hbox.addWidget(QtGui.QLabel(self.tr("Snapshot:")))
+        hbox.addWidget(self.snapshots.combo1)
+        hbox.addWidget(QtGui.QLabel(self.tr("compared to:")))
+        hbox.addWidget(self.snapshots.combo2)
+        hbox.addWidget(self.snapshots.load_button)
+        snap_box = QtGui.QWidget()
+        snap_box.setLayout(hbox)
+
         # Group by
         hbox = QtGui.QHBoxLayout(widget)
         hbox.addWidget(QtGui.QLabel(self.tr("Group by:")))
-        self.stats.group_by.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum))
         hbox.addWidget(self.stats.group_by)
+        hbox.addWidget(self.stats.cumulative_checkbox)
+        hbox.addWidget(self.stats.filters_label)
+        self.stats.filters_label.setSizePolicy(QtGui.QSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum))
         group_by_box = QtGui.QWidget()
         group_by_box.setLayout(hbox)
 
         # Main layout
         layout = QtGui.QVBoxLayout(widget)
-        layout.addWidget(self.snapshots.combo1)
-        layout.addWidget(self.snapshots.combo2)
-        layout.addWidget(self.snapshots.load_button)
-        layout.addWidget(self.stats.cumulative_checkbox)
+        layout.addWidget(snap_box)
         layout.addWidget(group_by_box)
-        layout.addWidget(self.stats.filters_label)
         layout.addWidget(self.stats.view)
         layout.addWidget(self.stats.summary)
         widget.setLayout(layout)
