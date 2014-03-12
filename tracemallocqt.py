@@ -4,6 +4,7 @@ from PySide import QtCore
 from PySide import QtGui
 import datetime
 import functools
+import io
 import linecache
 import operator
 import os.path
@@ -11,6 +12,8 @@ import pickle
 import sys
 import tracemalloc
 import xml.sax.saxutils
+
+from tools import detect_encoding
 
 SORT_ROLE = QtCore.Qt.UserRole
 MORE_TEXT = u'...'
@@ -244,6 +247,7 @@ class StatsManager:
         self.app = app
         self.window = window
         self.snapshots = window.snapshots
+        self.text = window.text
         self.filename_parts = 3
         self._auto_refresh = False
 
@@ -270,6 +274,7 @@ class StatsManager:
 
         window.connect(self.group_by, QtCore.SIGNAL("currentIndexChanged(int)"), self.group_by_changed)
         window.connect(self.view, QtCore.SIGNAL("doubleClicked(const QModelIndex&)"), self.double_clicked)
+        window.connect(self.view, QtCore.SIGNAL("clicked(const QModelIndex&)"), self.clicked)
         window.connect(self.cumulative_checkbox, QtCore.SIGNAL("stateChanged(int)"), self.change_cumulative)
         window.connect(self.snapshots.load_button, QtCore.SIGNAL("clicked(bool)"), self.load_snapshots)
 
@@ -353,6 +358,12 @@ class StatsManager:
             lines = self.window.tr("Tracebacks: %s") % lines
         total = self.window.tr("%s - Total: %s") % (lines, total)
         self.summary.setText(total)
+
+    def clicked(self, index):
+        stat = self.model.get_stat(index)
+        if stat is None:
+            return
+        self.text.show_stat(stat)
 
     def double_clicked(self, index):
         stat = self.model.get_stat(index)
@@ -485,6 +496,48 @@ class SnapshotManager:
         return (snapshot1, snapshot2)
 
 
+class TextManager:
+    def __init__(self, parent):
+        self.text_edit = QtGui.QTextEdit(parent)
+        self.text_edit.setReadOnly(True)
+        self._current_file = None
+
+    def load_file(self, filename):
+        if self._current_file == filename:
+            return True
+        try:
+            with open(filename, 'rb') as fp:
+                encoding, lines = detect_encoding(fp.readline)
+            lineno = 1
+            lines = []
+            with io.open(filename, 'r', encoding=encoding) as fp:
+                for lineno, line in enumerate(fp, 1):
+                    lines.append(u'% 3d: %s' % (lineno, line.rstrip()))
+        except IOError:
+            return False
+        text = u'\n'.join(lines)
+        self.text_edit.setText(text)
+        self._current_file = filename
+        return True
+
+    def set_line_number(self, lineno):
+        doc = self.text_edit.document()
+        block = doc.findBlockByLineNumber(lineno - 1)
+        cursor = QtGui.QTextCursor(block)
+        cursor.select(QtGui.QTextCursor.BlockUnderCursor)
+        self.text_edit.setTextCursor(cursor)
+
+    def show_stat(self, stat):
+        frame = stat.traceback[0]
+        filename = frame.filename
+        if filename.startswith("<") and filename.startswith(">"):
+            return
+        if not self.load_file(filename):
+            return
+        if frame.lineno > 0:
+            self.set_line_number(frame.lineno)
+
+
 class MainWindow(QtGui.QMainWindow):
     def __init__(self, app, filenames):
         QtGui.QMainWindow.__init__(self)
@@ -508,6 +561,7 @@ class MainWindow(QtGui.QMainWindow):
         # create classes
         self.snapshots = SnapshotManager(self)
         self.snapshots.set_filenames(filenames)
+        self.text = TextManager(self)
         self.stats = StatsManager(self, app)
         self.history = self.stats.history
 
@@ -537,6 +591,7 @@ class MainWindow(QtGui.QMainWindow):
         layout.addWidget(group_by_box)
         layout.addWidget(self.stats.view)
         layout.addWidget(self.stats.summary)
+        layout.addWidget(self.text.text_edit)
         widget.setLayout(layout)
         self.setCentralWidget(widget)
 
@@ -545,6 +600,7 @@ class MainWindow(QtGui.QMainWindow):
 
     def go_next(self, checked):
         self.history.go_next()
+
 
 class Application:
     def __init__(self):
@@ -562,6 +618,7 @@ class Application:
         self.window.show()
         self.app.exec_()
         sys.exit()
+
 
 if __name__ == "__main__":
     Application().main()
