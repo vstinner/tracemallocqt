@@ -212,6 +212,10 @@ class History:
         self.states = []
         self.index = -1
 
+    def clear(self):
+        del self.states[:]
+        self.index = -1
+
     def append(self, state):
         if self.index != len(self.states) - 1:
             del self.states[self.index+1:]
@@ -251,7 +255,6 @@ class StatsManager:
         self._auto_refresh = False
 
         self.filters = []
-#        self.filters.append(tracemalloc.Filter(False, "<frozen importlib._bootstrap>"))
         self.history = History(self)
 
         self.view = QtGui.QTableView(window)
@@ -262,14 +265,12 @@ class StatsManager:
             window.tr("Line number"),
             window.tr("Traceback"),
         ])
-        self.group_by.setCurrentIndex(self.GROUP_BY_FILENAME)
 
         self.filters_label = QtGui.QLabel(window)
         self.summary = QtGui.QLabel(window)
         self.view.verticalHeader().hide()
         self.view.resizeColumnsToContents()
         self.view.setSortingEnabled(True)
-        self.refresh()
 
         window.connect(self.group_by, QtCore.SIGNAL("currentIndexChanged(int)"), self.group_by_changed)
         window.connect(self.view, QtCore.SIGNAL("doubleClicked(const QModelIndex&)"), self.double_clicked)
@@ -277,11 +278,21 @@ class StatsManager:
         window.connect(self.cumulative_checkbox, QtCore.SIGNAL("stateChanged(int)"), self.change_cumulative)
         window.connect(self.snapshots.load_button, QtCore.SIGNAL("clicked(bool)"), self.load_snapshots)
 
-        self.append_history()
+        self.clear()
         self._auto_refresh = True
 
-    def load_snapshots(self, checked):
+    def clear(self):
+        del self.filters[:]
+#        self.filters.append(tracemalloc.Filter(False, "<frozen importlib._bootstrap>"))
+        self.cumulative_checkbox.setCheckState(QtCore.Qt.Unchecked)
+        self.group_by.setCurrentIndex(self.GROUP_BY_FILENAME)
+        self.history.clear()
+        self.append_history()
         self.refresh()
+
+    def load_snapshots(self, checked):
+        self.source.clear()
+        self.clear()
 
     def append_history(self):
         group_by = self.group_by.currentIndex()
@@ -423,6 +434,7 @@ class MySnapshot:
 
     def load(self):
         if self.snapshot is None:
+            print("Load snapshot %s" % self.filename)
             with open(self.filename, "rb") as fp:
                 self.snapshot = pickle.load(fp)
             self.ntraces = len(self.snapshot.traces)
@@ -508,6 +520,13 @@ class SourceCodeManager:
         self.traceback_view = QtGui.QListView(window)
         self.traceback_view.setModel(self.traceback_model)
         window.connect(self.traceback_view, QtCore.SIGNAL("clicked(const QModelIndex&)"), self.click_frame)
+        # filename => (lines, mtime)
+        self._file_cache = {}
+
+    def clear(self):
+        self.traceback_model.setStringList([])
+        self.text_edit.setText(u'')
+        self._file_cache.clear()
 
     def click_frame(self, index):
         row = index.row()
@@ -522,9 +541,13 @@ class SourceCodeManager:
             lines = [frame.filename for frame in traceback]
         self.traceback_model.setStringList(lines)
 
-    def load_file(self, filename):
-        if self._current_file == filename:
-            return True
+    def read_file(self, filename):
+        mtime = os.stat(filename).st_mtime
+        if filename in self._file_cache:
+            text, cache_mtime = self._file_cache[filename]
+            if mtime == cache_mtime:
+                return text
+
         try:
             with open(filename, 'rb') as fp:
                 encoding, lines = detect_encoding(fp.readline)
@@ -535,7 +558,15 @@ class SourceCodeManager:
                     lines.append(u'%d: %s' % (lineno, line.rstrip()))
         except IOError:
             return False
+
         text = u'\n'.join(lines)
+        self._file_cache[filename] = (text, mtime)
+        return text
+
+    def load_file(self, filename):
+        if self._current_file == filename:
+            return True
+        text = self.read_file(filename)
         self.text_edit.setText(text)
         self._current_file = filename
         return True
