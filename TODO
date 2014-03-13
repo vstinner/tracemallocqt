@@ -1,0 +1,25 @@
+TODO list
+=========
+
+Important:
+
+- dialog to open a snapshot file
+- contextual menu: copy filename/line/traceback, open line in an editor
+- support "all_frames=False" filter (search a filename anywhere in the
+  traceback, not only in the most recent frame)
+
+Minor:
+
+- configurable filters
+- display the traceback limit
+
+Later:
+
+- annotate the source code: how many bytes were allocated
+  (with red color for largest allocations ;-))
+- tracemalloc_wrapper.py: collect RSS memory and tracemalloc current/peak
+  memory every 5 seconds, take snapshots every 60 seconds
+- graphics to show the evolution of (total) memory many snapshots
+- more charts?
+- "process bar" to display the "%Total" column to see immediatly the
+  lines allocating the most memroy
