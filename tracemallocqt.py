@@ -25,15 +25,23 @@ def tr(text):
     return text
 
 class StatsModel(QtCore.QAbstractTableModel):
-    def __init__(self, manager, stats):
+    def __init__(self, manager):
         QtCore.QAbstractTableModel.__init__(self, manager.window)
-
         self.manager = manager
-        self.group_by = manager.get_group_by()
-        self.stats = stats
-        self.diff = isinstance(stats[0], tracemalloc.StatisticDiff)
-        self.total = sum(stat.size for stat in stats)
+        self.show_frames = 3
+        self.tooltip_frames = 25
+        self.set_stats((), 'filename')
 
+    def set_stats(self, stats, group_by):
+        self.emit(QtCore.SIGNAL("layoutAboutToBeChanged()"))
+
+        self.stats = stats
+        self.group_by = group_by
+        if stats:
+            self.diff = isinstance(stats[0], tracemalloc.StatisticDiff)
+        else:
+            self.diff = False
+        self.total = sum(stat.size for stat in stats)
         if self.group_by == 'traceback':
             source = self.tr("Traceback")
         elif self.group_by == 'lineno':
@@ -48,8 +56,8 @@ class StatsModel(QtCore.QAbstractTableModel):
             self.headers.append(self.tr("Count Diff"))
         self.headers.extend([self.tr("Item Size"), self.tr("%Total")])
 
-        self.show_frames = 3
-        self.tooltip_frames = 25
+        self.emit(QtCore.SIGNAL("layoutChanged()"))
+
 
     def get_default_sort_column(self):
         if self.diff:
@@ -257,7 +265,9 @@ class StatsManager:
         self.filters = []
         self.history = History(self)
 
+        self.model = StatsModel(self)
         self.view = QtGui.QTableView(window)
+        self.view.setModel(self.model)
         self.cumulative_checkbox = QtGui.QCheckBox(window.tr("Cumulative sizes"), window)
         self.group_by = QtGui.QComboBox(window)
         self.group_by.addItems([
@@ -274,9 +284,9 @@ class StatsManager:
 
         window.connect(self.group_by, QtCore.SIGNAL("currentIndexChanged(int)"), self.group_by_changed)
         window.connect(self.view, QtCore.SIGNAL("doubleClicked(const QModelIndex&)"), self.double_clicked)
-        window.connect(self.view, QtCore.SIGNAL("clicked(const QModelIndex&)"), self.clicked)
         window.connect(self.cumulative_checkbox, QtCore.SIGNAL("stateChanged(int)"), self.change_cumulative)
         window.connect(self.snapshots.load_button, QtCore.SIGNAL("clicked(bool)"), self.load_snapshots)
+        window.connect(self.view.selectionModel(), QtCore.SIGNAL("selectionChanged(const QItemSelection&, const QItemSelection&)"), self.selection_changed)
 
         self.clear()
         self._auto_refresh = True
@@ -334,8 +344,11 @@ class StatsManager:
             stats = snapshot2.compare_to(snapshot1, group_by, cumulative)
         else:
             stats = snapshot1.statistics(group_by, cumulative)
-        self.model = StatsModel(self, stats)
-        self.view.setModel(self.model)
+
+        self.view.clearSelection()
+        group_by = self.get_group_by()
+        self.model.set_stats(stats, group_by)
+
         self.view.resizeColumnsToContents()
         self.view.sortByColumn(self.model.get_default_sort_column(), QtCore.Qt.DescendingOrder)
 
@@ -369,8 +382,11 @@ class StatsManager:
         total = self.window.tr("%s - Total: %s") % (lines, total)
         self.summary.setText(total)
 
-    def clicked(self, index):
-        stat = self.model.get_stat(index)
+    def selection_changed(self, selected, unselected):
+        indexes = selected.indexes()
+        if not indexes:
+            return
+        stat = self.model.get_stat(indexes[0])
         if stat is None:
             return
         self.source.set_traceback(stat.traceback,
@@ -513,23 +529,28 @@ class SourceCodeManager:
     def __init__(self, window):
         self.text_edit = QtGui.QTextEdit(window)
         self.text_edit.setReadOnly(True)
-        self._current_file = None
         # FIXME: write an optimized model
         self.traceback = None
         self.traceback_model = QtGui.QStringListModel()
         self.traceback_view = QtGui.QListView(window)
         self.traceback_view.setModel(self.traceback_model)
-        window.connect(self.traceback_view, QtCore.SIGNAL("clicked(const QModelIndex&)"), self.click_frame)
+        window.connect(self.traceback_view.selectionModel(), QtCore.SIGNAL("selectionChanged(const QItemSelection&, const QItemSelection&)"), self.frame_selection_changed)
         # filename => (lines, mtime)
         self._file_cache = {}
+        self.clear()
 
     def clear(self):
+        self._current_file = None
+        self._current_lineno = None
         self.traceback_model.setStringList([])
         self.text_edit.setText(u'')
         self._file_cache.clear()
 
-    def click_frame(self, index):
-        row = index.row()
+    def frame_selection_changed(self, selected, unselected):
+        indexes = selected.indexes()
+        if not indexes:
+            return
+        row = indexes[0].row()
         frame = self.traceback[row]
         self.show_frame(frame)
 
@@ -542,22 +563,24 @@ class SourceCodeManager:
         self.traceback_model.setStringList(lines)
 
     def read_file(self, filename):
-        mtime = os.stat(filename).st_mtime
+        try:
+            mtime = os.stat(filename).st_mtime
+        except OSError:
+            return None
+
         if filename in self._file_cache:
             text, cache_mtime = self._file_cache[filename]
             if mtime == cache_mtime:
                 return text
 
-        try:
-            with open(filename, 'rb') as fp:
-                encoding, lines = detect_encoding(fp.readline)
-            lineno = 1
-            lines = []
-            with io.open(filename, 'r', encoding=encoding) as fp:
-                for lineno, line in enumerate(fp, 1):
-                    lines.append(u'%d: %s' % (lineno, line.rstrip()))
-        except IOError:
-            return False
+        print("Read %s content (mtime: %s)" % (filename, mtime))
+        with open(filename, 'rb') as fp:
+            encoding, lines = detect_encoding(fp.readline)
+        lineno = 1
+        lines = []
+        with io.open(filename, 'r', encoding=encoding) as fp:
+            for lineno, line in enumerate(fp, 1):
+                lines.append(u'%d: %s' % (lineno, line.rstrip()))
 
         text = u'\n'.join(lines)
         self._file_cache[filename] = (text, mtime)
@@ -567,15 +590,23 @@ class SourceCodeManager:
         if self._current_file == filename:
             return True
         text = self.read_file(filename)
+        if text is None:
+            return False
         self.text_edit.setText(text)
         self._current_file = filename
+        self._current_lineno = None
         return True
 
     def set_line_number(self, lineno):
+        if self._current_lineno == lineno:
+            return
+        self._current_lineno = lineno
         doc = self.text_edit.document()
+        # FIXME: complexity in O(number of lines)?
         block = doc.findBlockByLineNumber(lineno - 1)
         cursor = QtGui.QTextCursor(block)
         cursor.select(QtGui.QTextCursor.BlockUnderCursor)
+        # FIXME: complexity in O(number of lines)?
         self.text_edit.setTextCursor(cursor)
 
     def show_frame(self, frame):
