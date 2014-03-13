@@ -35,3 +35,6 @@ Dependencies
 * Python 2
 * PySide: http://qt-project.org/wiki/Get-PySide
 
+  - Fedora: sudo yum install python-pyside
+  - Debian: sudo apt-get install python-pyside.qtgui
+
