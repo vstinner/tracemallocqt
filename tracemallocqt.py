@@ -489,6 +489,7 @@ class SnapshotManager:
 
     def set_filenames(self, filenames):
         self.snapshots = [MySnapshot(filename) for filename in filenames]
+        self.snapshots.sort(key=lambda snapshot: snapshot.timestamp)
 
         self.snapshots[0].load()
         if len(self.snapshots) > 1:
