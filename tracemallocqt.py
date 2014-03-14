@@ -97,7 +97,7 @@ class StatsModel(QtCore.QAbstractTableModel):
             filename = escape_html(filename)
         lineno = frame.lineno
         if self.group_by != "filename":
-            return u"%s:%s" % (filename, lineno)
+            return "%s:%s" % (filename, lineno)
         else:
             return filename
 
@@ -365,7 +365,7 @@ class StatsManager:
                 else:
                     text = self.window.tr("exclude %s") % text
                 filters.append(text)
-            filters_text = u", ".join(filters)
+            filters_text = ", ".join(filters)
         else:
             filters_text = self.window.tr("(none)")
         filters_text = self.window.tr("Filters: %s") % filters_text
