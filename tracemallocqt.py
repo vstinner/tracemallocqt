@@ -15,7 +15,7 @@ import xml.sax.saxutils
 from tools import detect_encoding
 
 SORT_ROLE = QtCore.Qt.UserRole
-MORE_TEXT = u'...'
+MORE_TEXT = '...'
 
 def escape_html(text):
     return xml.sax.saxutils.escape(text)
@@ -123,9 +123,9 @@ class StatsModel(QtCore.QAbstractTableModel):
                 if len(stat.traceback) > max_frames:
                     lines.append(MORE_TEXT)
                 if role == QtCore.Qt.DisplayRole:
-                    return u' <= '.join(lines)
+                    return ' <= '.join(lines)
                 else:
-                    return u'<br />'.join(lines)
+                    return '<br />'.join(lines)
             else:
                 frame = stat.traceback[0]
                 if role == QtCore.Qt.ToolTipRole:
@@ -544,7 +544,7 @@ class SourceCodeManager:
         self._current_file = None
         self._current_lineno = None
         self.traceback_model.setStringList([])
-        self.text_edit.setText(u'')
+        self.text_edit.setText('')
         self._file_cache.clear()
 
     def frame_selection_changed(self, selected, unselected):
@@ -581,9 +581,9 @@ class SourceCodeManager:
         lines = []
         with io.open(filename, 'r', encoding=encoding) as fp:
             for lineno, line in enumerate(fp, 1):
-                lines.append(u'%d: %s' % (lineno, line.rstrip()))
+                lines.append('%d: %s' % (lineno, line.rstrip()))
 
-        text = u'\n'.join(lines)
+        text = '\n'.join(lines)
         self._file_cache[filename] = (text, mtime)
         return text
 
