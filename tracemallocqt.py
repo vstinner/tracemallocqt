@@ -30,18 +30,31 @@ class StatsModel(QtCore.QAbstractTableModel):
         self.manager = manager
         self.show_frames = 3
         self.tooltip_frames = 25
-        self.set_stats((), 'filename')
+        self.set_stats(None, None, 'filename', False)
 
-    def set_stats(self, stats, group_by):
+    def set_stats(self, snapshot1, snapshot2, group_by, cumulative):
         self.emit(QtCore.SIGNAL("layoutAboutToBeChanged()"))
 
-        self.stats = stats
-        self.group_by = group_by
-        if stats:
+        if snapshot1 is not None:
+            if snapshot2 is not None:
+                stats = snapshot2.compare_to(snapshot1, group_by, cumulative)
+            else:
+                stats = snapshot1.statistics(group_by, cumulative)
+            self.stats = stats
             self.diff = isinstance(stats[0], tracemalloc.StatisticDiff)
+            self.total = sum(stat.size for stat in self.stats)
+            self.total_text = tracemalloc._format_size(self.total, False)
+            if snapshot2 is not None:
+                total1 = sum(trace.size for trace in snapshot1.traces)
+                total2 = self.total
+                self.total_text += ' (%s)' % tracemalloc._format_size(total2 - total1, True)
         else:
+            self.stats = ()
             self.diff = False
-        self.total = sum(stat.size for stat in stats)
+            self.total = 0
+            self.total_text = tracemalloc._format_size(0, False)
+
+        self.group_by = group_by
         if self.group_by == 'traceback':
             source = self.tr("Traceback")
         elif self.group_by == 'lineno':
@@ -345,14 +358,10 @@ class StatsManager:
             # FIXME: add visual feedback
             cumulative = False
         snapshot1, snapshot2 = self.snapshots.load_snapshots(self.filters)
-        if snapshot2 is not None:
-            stats = snapshot2.compare_to(snapshot1, group_by, cumulative)
-        else:
-            stats = snapshot1.statistics(group_by, cumulative)
 
         self.view.clearSelection()
         group_by = self.get_group_by()
-        self.model.set_stats(stats, group_by)
+        self.model.set_stats(snapshot1, snapshot2, group_by, cumulative)
 
         self.view.resizeColumnsToContents()
         self.view.sortByColumn(self.model.get_default_sort_column(), QtCore.Qt.DescendingOrder)
@@ -376,7 +385,7 @@ class StatsManager:
         filters_text = self.window.tr("Filters: %s") % filters_text
         self.filters_label.setText(filters_text)
 
-        total = tracemalloc._format_size(self.model.total, False)
+        total = self.model.total_text
         lines = len(self.model.stats)
         if group_by == 'filename':
             lines = self.window.tr("Files: %s") % lines
