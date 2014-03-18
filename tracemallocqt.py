@@ -138,7 +138,7 @@ class StatsModel(QtCore.QAbstractTableModel):
                         lines.append(line)
                 if len(stat.traceback) > max_frames:
                     lines.append(MORE_TEXT)
-                elif role == QtCore.Qt.DisplayRole:
+                if role == QtCore.Qt.DisplayRole:
                     return ' <= '.join(lines)
                 elif role == QtCore.Qt.ToolTipRole:
                     return '<br />'.join(lines)
