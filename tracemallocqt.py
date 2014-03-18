@@ -92,12 +92,15 @@ class StatsModel(QtCore.QAbstractTableModel):
 
         if role == QtCore.Qt.DisplayRole:
             filename = self.manager.format_filename(filename)
-
-        if role == QtCore.Qt.ToolTipRole:
+        elif role == QtCore.Qt.ToolTipRole:
             filename = escape_html(filename)
+
         lineno = frame.lineno
         if self.group_by != "filename":
-            return "%s:%s" % (filename, lineno)
+            if role == SORT_ROLE:
+                return (filename, lineno)
+            else:
+                return "%s:%s" % (filename, lineno)
         else:
             return filename
 
@@ -122,10 +125,12 @@ class StatsModel(QtCore.QAbstractTableModel):
                         lines.append(line)
                 if len(stat.traceback) > max_frames:
                     lines.append(MORE_TEXT)
-                if role == QtCore.Qt.DisplayRole:
+                elif role == QtCore.Qt.DisplayRole:
                     return ' <= '.join(lines)
-                else:
+                elif role == QtCore.Qt.ToolTipRole:
                     return '<br />'.join(lines)
+                else: # role == SORT_ROLE
+                    return lines
             else:
                 frame = stat.traceback[0]
                 if role == QtCore.Qt.ToolTipRole:
