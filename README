@@ -34,7 +34,10 @@ You can specify any number of snapshots on the command line.
 Dependencies
 ============
 
-* Python 2
+pytracemalloc works on Python 2 and Python 3. It supports PySide and PyQt4 (use
+your preferred Qt binding). If PySide and PyQt4 are available, PySide is used.
+
+* PyQt4: http://www.riverbankcomputing.co.uk/software/pyqt/intro
 * PySide: http://qt-project.org/wiki/Get-PySide
 
   - Fedora: sudo yum install python-pyside

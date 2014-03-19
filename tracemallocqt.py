@@ -1,7 +1,19 @@
 #!/usr/bin/env python
 
-from PySide import QtCore
-from PySide import QtGui
+try:
+    unicode
+except NameError:
+    # Python 3
+    unicode = str
+try:
+    from PySide import QtCore, QtGui
+    def fmt(x, *args):
+        return x % args
+except ImportError:
+    from PyQt4 import QtCore, QtGui
+    def fmt(x, *args):
+        # QString in PyQt4 doesn't support the % operation
+        return unicode(x) % args
 import datetime
 import functools
 import io
@@ -375,25 +387,25 @@ class StatsManager:
                 if filter.all_frames:
                     text += self.window.tr(" (any frame)")
                 if filter.inclusive:
-                    text = self.window.tr("include %s") % text
+                    text = fmt(self.window.tr("include %s"), text)
                 else:
-                    text = self.window.tr("exclude %s") % text
+                    text = fmt(self.window.tr("exclude %s"), text)
                 filters.append(text)
             filters_text = ", ".join(filters)
         else:
             filters_text = self.window.tr("(none)")
-        filters_text = self.window.tr("Filters: %s") % filters_text
+        filters_text = fmt(self.window.tr("Filters: %s"), filters_text)
         self.filters_label.setText(filters_text)
 
         total = self.model.total_text
         lines = len(self.model.stats)
         if group_by == 'filename':
-            lines = self.window.tr("Files: %s") % lines
+            lines = fmt(self.window.tr("Files: %s"), lines)
         elif group_by == 'lineno':
-            lines = self.window.tr("Lines: %s") % lines
+            lines = fmt(self.window.tr("Lines: %s"), lines)
         else:
-            lines = self.window.tr("Tracebacks: %s") % lines
-        total = self.window.tr("%s - Total: %s") % (lines, total)
+            lines = fmt(self.window.tr("Tracebacks: %s"), lines)
+        total = fmt(self.window.tr("%s - Total: %s"), lines, total)
         self.summary.setText(total)
 
     def selection_changed(self, selected, unselected):
@@ -485,7 +497,7 @@ class MySnapshot:
         name = os.path.basename(self.filename)
         infos = [
             tracemalloc._format_size(self.total, False),
-            tr("%s traces") % self.ntraces,
+            fmt(tr("%s traces"), self.ntraces),
             str(self.timestamp),
         ]
         return "%s (%s)" % (name, ', '.join(infos))
