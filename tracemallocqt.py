@@ -7,10 +7,14 @@ except NameError:
     unicode = str
 try:
     from PySide import QtCore, QtGui
+    from PySide.QtCore import Qt
     def fmt(x, *args):
         return x % args
+    print("Qt binding: PySide")
 except ImportError:
     from PyQt4 import QtCore, QtGui
+    from PyQt4.QtCore import Qt
+    print("Qt binding: PyQt4")
     def fmt(x, *args):
         # QString in PyQt4 doesn't support the % operation
         return unicode(x) % args
@@ -26,7 +30,7 @@ import xml.sax.saxutils
 
 from tools import detect_encoding
 
-SORT_ROLE = QtCore.Qt.UserRole
+SORT_ROLE = Qt.UserRole
 MORE_TEXT = '...'
 
 def escape_html(text):
@@ -103,7 +107,7 @@ class StatsModel(QtCore.QAbstractTableModel):
     def format_size(self, role, size, diff):
         if role == SORT_ROLE:
             return size
-        if role == QtCore.Qt.ToolTipRole:
+        if role == Qt.ToolTipRole:
             if abs(size) < 10 * 1024:
                 return None
             if diff:
@@ -115,9 +119,9 @@ class StatsModel(QtCore.QAbstractTableModel):
     def format_frame(self, role, frame):
         filename = frame.filename
 
-        if role == QtCore.Qt.DisplayRole:
+        if role == Qt.DisplayRole:
             filename = self.manager.format_filename(filename)
-        elif role == QtCore.Qt.ToolTipRole:
+        elif role == Qt.ToolTipRole:
             filename = escape_html(filename)
 
         lineno = frame.lineno
@@ -132,16 +136,16 @@ class StatsModel(QtCore.QAbstractTableModel):
     def _data(self, column, role, stat):
         if column == 0:
             if self.group_by == 'traceback':
-                if role == QtCore.Qt.ToolTipRole:
+                if role == Qt.ToolTipRole:
                     max_frames = self.tooltip_frames
                 else:
                     max_frames = self.show_frames
                 lines = []
-                if role == QtCore.Qt.ToolTipRole:
+                if role == Qt.ToolTipRole:
                     lines.append(self.tr("Traceback (most recent first):"))
                 for frame in stat.traceback[:max_frames]:
                     line = self.format_frame(role, frame)
-                    if role == QtCore.Qt.ToolTipRole:
+                    if role == Qt.ToolTipRole:
                         lines.append('&nbsp;' * 2 + line)
                         line = linecache.getline(frame.filename, frame.lineno).strip()
                         if line:
@@ -150,15 +154,15 @@ class StatsModel(QtCore.QAbstractTableModel):
                         lines.append(line)
                 if len(stat.traceback) > max_frames:
                     lines.append(MORE_TEXT)
-                if role == QtCore.Qt.DisplayRole:
+                if role == Qt.DisplayRole:
                     return ' <= '.join(lines)
-                elif role == QtCore.Qt.ToolTipRole:
+                elif role == Qt.ToolTipRole:
                     return '<br />'.join(lines)
                 else: # role == SORT_ROLE
                     return lines
             else:
                 frame = stat.traceback[0]
-                if role == QtCore.Qt.ToolTipRole:
+                if role == Qt.ToolTipRole:
                     # FIXME: display the full path in the tooltip
                     if frame.lineno:
                         line = linecache.getline(frame.filename, frame.lineno).strip()
@@ -177,11 +181,11 @@ class StatsModel(QtCore.QAbstractTableModel):
                 size = stat.size_diff
                 return self.format_size(role, size, True)
             if column == 3:
-                if role == QtCore.Qt.ToolTipRole:
+                if role == Qt.ToolTipRole:
                     return None
                 return stat.count
             if column == 4:
-                if role == QtCore.Qt.ToolTipRole:
+                if role == Qt.ToolTipRole:
                     return None
                 return "%+d" % stat.count_diff
             if column == 5:
@@ -193,7 +197,7 @@ class StatsModel(QtCore.QAbstractTableModel):
                     return 0
         else:
             if column == 2:
-                if role == QtCore.Qt.ToolTipRole:
+                if role == Qt.ToolTipRole:
                     return None
                 return stat.count
             if column == 3:
@@ -204,12 +208,12 @@ class StatsModel(QtCore.QAbstractTableModel):
                 return self.format_size(role, size, False)
 
         # %Total
-        if role == QtCore.Qt.ToolTipRole:
+        if role == Qt.ToolTipRole:
             return None
         if not self.total:
             return 0
         percent = float(stat.size) / self.total
-        if role == QtCore.Qt.DisplayRole:
+        if role == Qt.DisplayRole:
             return "%.1f %%" % (percent * 100.0)
         else:
             return percent
@@ -217,14 +221,14 @@ class StatsModel(QtCore.QAbstractTableModel):
     def data(self, index, role):
         if not index.isValid():
             return None
-        if role not in (QtCore.Qt.DisplayRole, QtCore.Qt.ToolTipRole):
+        if role not in (Qt.DisplayRole, Qt.ToolTipRole):
             return None
         stat = self.stats[index.row()]
         column = index.column()
         return self._data(column, role, stat)
 
     def headerData(self, col, orientation, role):
-        if orientation == QtCore.Qt.Horizontal and role == QtCore.Qt.DisplayRole:
+        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
             return self.headers[col]
         return None
 
@@ -233,7 +237,7 @@ class StatsModel(QtCore.QAbstractTableModel):
         self.emit(QtCore.SIGNAL("layoutAboutToBeChanged()"))
         self.stats = sorted(self.stats,
             key=functools.partial(self._data, col, SORT_ROLE),
-            reverse=(order == QtCore.Qt.DescendingOrder))
+            reverse=(order == Qt.DescendingOrder))
         self.emit(QtCore.SIGNAL("layoutChanged()"))
 
 
@@ -324,7 +328,7 @@ class StatsManager:
     def clear(self):
         del self.filters[:]
 #        self.filters.append(tracemalloc.Filter(False, "<frozen importlib._bootstrap>"))
-        self.cumulative_checkbox.setCheckState(QtCore.Qt.Unchecked)
+        self.cumulative_checkbox.setCheckState(Qt.Unchecked)
         self.group_by.setCurrentIndex(self.GROUP_BY_FILENAME)
         self.history.clear()
         self.append_history()
@@ -360,7 +364,7 @@ class StatsManager:
         return self.GROUP_BY[index]
 
     def get_cumulative(self):
-        return (self.cumulative_checkbox.checkState() == QtCore.Qt.Checked)
+        return (self.cumulative_checkbox.checkState() == Qt.Checked)
 
     def refresh(self):
         group_by = self.get_group_by()
@@ -376,7 +380,7 @@ class StatsManager:
         self.model.set_stats(snapshot1, snapshot2, group_by, cumulative)
 
         self.view.resizeColumnsToContents()
-        self.view.sortByColumn(self.model.get_default_sort_column(), QtCore.Qt.DescendingOrder)
+        self.view.sortByColumn(self.model.get_default_sort_column(), Qt.DescendingOrder)
 
         if self.filters:
             filters = []
@@ -614,6 +618,8 @@ class SourceCodeManager:
         return text
 
     def load_file(self, filename):
+        if filename.startswith("<") and filename.startswith(">"):
+            return False
         if self._current_file == filename:
             return True
         text = self.read_file(filename)
@@ -638,9 +644,8 @@ class SourceCodeManager:
 
     def show_frame(self, frame):
         filename = frame.filename
-        if filename.startswith("<") and filename.startswith(">"):
-            return
         if not self.load_file(filename):
+            self.text_edit.setText('')
             return
         if frame.lineno > 0:
             self.set_line_number(frame.lineno)
@@ -707,7 +712,7 @@ class MainWindow(QtGui.QMainWindow):
         top_widget.setLayout(layout)
 
         # main splitter
-        main_splitter = QtGui.QSplitter(QtCore.Qt.Vertical)
+        main_splitter = QtGui.QSplitter(Qt.Vertical)
         main_splitter.addWidget(top_widget)
         main_splitter.addWidget(source_splitter)
         self.setCentralWidget(main_splitter)
