@@ -163,12 +163,15 @@ class StatsModel(QtCore.QAbstractTableModel):
             else:
                 frame = stat.traceback[0]
                 if role == Qt.ToolTipRole:
-                    # FIXME: display the full path in the tooltip
                     if frame.lineno:
                         line = linecache.getline(frame.filename, frame.lineno).strip()
                         if line:
                             return line
-                    return None
+                        return None
+                    else:
+                        if role == Qt.ToolTipRole:
+                            return frame.filename
+                        return None
                 else:
                     return self.format_frame(role, frame)
 
@@ -676,14 +679,22 @@ class MainWindow(QtGui.QMainWindow):
         self.history = self.stats.history
 
         # snapshots
-        hbox = QtGui.QHBoxLayout()
-        hbox.addWidget(QtGui.QLabel(self.tr("Snapshot:")))
-        hbox.addWidget(self.snapshots.combo1)
-        hbox.addWidget(QtGui.QLabel(self.tr("compared to:")))
-        hbox.addWidget(self.snapshots.combo2)
-        hbox.addWidget(self.snapshots.load_button)
+        hbox1 = QtGui.QHBoxLayout()
+        hbox1.addWidget(QtGui.QLabel(self.tr("Snapshot:")))
+        hbox1.addWidget(self.snapshots.combo1)
+        hbox2 = QtGui.QHBoxLayout()
+        hbox2.addWidget(QtGui.QLabel(self.tr("compared to:")))
+        hbox2.addWidget(self.snapshots.combo2)
+
+        vbox = QtGui.QVBoxLayout()
+        vbox.addLayout(hbox1)
+        vbox.addLayout(hbox2)
+
+        hbox3 = QtGui.QHBoxLayout()
+        hbox3.addLayout(vbox)
+        hbox3.addWidget(self.snapshots.load_button)
         snap_box = QtGui.QWidget()
-        snap_box.setLayout(hbox)
+        snap_box.setLayout(hbox3)
 
         # Group by
         hbox = QtGui.QHBoxLayout()
