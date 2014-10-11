@@ -1,11 +1,43 @@
+# Copy of tracemalloc.py from pytracemalloc without _tracemalloc,
+# to be able to read snapshot without having to install the _tracemaloc
+# module
 from collections import Sequence, Iterable
-from functools import total_ordering
 import fnmatch
 import linecache
 import os.path
 import pickle
 
-# Import types and functions implemented in C
+
+try:
+    from functools import total_ordering
+except ImportError:
+    # Python 2.6
+    def total_ordering(cls):
+        # Function backported from Python 2.7
+        convert = {
+            '__lt__': [('__gt__', lambda self, other: _not_op_and_not_eq(self.__lt__, self, other)),
+                       ('__le__', lambda self, other: _op_or_eq(self.__lt__, self, other)),
+                       ('__ge__', lambda self, other: _not_op(self.__lt__, other))],
+            '__le__': [('__ge__', lambda self, other: _not_op_or_eq(self.__le__, self, other)),
+                       ('__lt__', lambda self, other: _op_and_not_eq(self.__le__, self, other)),
+                       ('__gt__', lambda self, other: _not_op(self.__le__, other))],
+            '__gt__': [('__lt__', lambda self, other: _not_op_and_not_eq(self.__gt__, self, other)),
+                       ('__ge__', lambda self, other: _op_or_eq(self.__gt__, self, other)),
+                       ('__le__', lambda self, other: _not_op(self.__gt__, other))],
+            '__ge__': [('__le__', lambda self, other: _not_op_or_eq(self.__ge__, self, other)),
+                       ('__gt__', lambda self, other: _op_and_not_eq(self.__ge__, self, other)),
+                       ('__lt__', lambda self, other: _not_op(self.__ge__, other))]
+        }
+        roots = [op for op in convert if getattr(cls, op, None) is not getattr(object, op, None)]
+        if not roots:
+            raise ValueError('must define at least one ordering operation: < > <= >=')
+        root = max(roots)
+        for opname, opfunc in convert[root]:
+            if opname not in roots:
+                opfunc.__name__ = opname
+                opfunc.__doc__ = getattr(int, opname).__doc__
+                setattr(cls, opname, opfunc)
+        return cls
 
 
 def _format_size(size, sign):
@@ -25,7 +57,7 @@ def _format_size(size, sign):
         size /= 1024
 
 
-class Statistic:
+class Statistic(object):
     """
     Statistic difference on memory allocations between two Snapshot instance.
     """
@@ -63,7 +95,7 @@ class Statistic:
         return (self.size, self.count, self.traceback)
 
 
-class StatisticDiff:
+class StatisticDiff(object):
     """
     Statistic difference on memory allocations between an old and a new
     Snapshot instance.
@@ -132,7 +164,7 @@ def _compare_grouped_stats(old_group, new_group):
 
 
 @total_ordering
-class Frame:
+class Frame(object):
     """
     Frame of a traceback.
     """
@@ -220,7 +252,7 @@ class Traceback(Sequence):
         return lines
 
 
-class Trace:
+class Trace(object):
     """
     Trace of a memory block.
     """
@@ -285,17 +317,13 @@ def _normalize_filename(filename):
     return filename
 
 
-class Filter:
+class Filter(object):
     def __init__(self, inclusive, filename_pattern,
                  lineno=None, all_frames=False):
         self.inclusive = inclusive
         self._filename_pattern = _normalize_filename(filename_pattern)
         self.lineno = lineno
         self.all_frames = all_frames
-
-    def __repr__(self):
-        return ('<Filter inclusive=%r filename=%r lineno=%r all_frames=%r>'
-                % (self.inclusive, self._filename_pattern, self.lineno, self.all_frames))
 
     @property
     def filename_pattern(self):
@@ -385,7 +413,7 @@ class Snapshot(object):
                                                 exclude_filters,
                                                 trace)]
         else:
-            new_traces = self.traces._traces.copy()
+            new_traces = self.traces._traces[:]
         return Snapshot(new_traces, self.traceback_limit)
 
     def _group_by(self, key_type, cumulative):
