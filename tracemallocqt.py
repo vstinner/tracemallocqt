@@ -568,6 +568,7 @@ class SourceCodeManager:
         self.traceback_model = QtGui.QStringListModel()
         self.traceback_view = QtGui.QListView(window)
         self.traceback_view.setModel(self.traceback_model)
+        self.traceback_view.setEditTriggers(QtGui.QAbstractItemView.NoEditTriggers)
         window.connect(self.traceback_view.selectionModel(), QtCore.SIGNAL("selectionChanged(const QItemSelection&, const QItemSelection&)"), self.frame_selection_changed)
         # filename => (lines, mtime)
         self._file_cache = {}
@@ -648,6 +649,7 @@ class SourceCodeManager:
     def show_frame(self, frame):
         filename = frame.filename
         if not self.load_file(filename):
+            self._current_file = None
             self.text_edit.setText('')
             return
         if frame.lineno > 0:
