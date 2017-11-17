@@ -1,6 +1,6 @@
 Qt GUI for tracemalloc.
 
-* tracemallocqt: https://bitbucket.org/haypo/tracemallocqt
+* tracemallocqt: https://github.com/vstinner/tracemallocqt
 * tracemalloc for Python 2.5-3.3: http://pytracemalloc.readthedocs.org/
 * tracemalloc in Python 3.4: http://docs.python.org/dev/library/tracemalloc.html
 
