@@ -16,8 +16,7 @@ Run your application, enable tracemalloc and dump snapshots with::
     tracemalloc.start()
     # ... run your application ...
     snapshot = tracemalloc.take_snapshot()
-    with open(filename, "wb") as fp:
-        pickle.dump(snapshot, fp, 2)
+    snapshot.dump(filename)
     snapshot = None
 
 Then open a snapshot with::
