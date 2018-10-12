@@ -5,19 +5,15 @@ try:
 except NameError:
     # Python 3
     unicode = str
-try:
-    from PySide import QtCore, QtGui
-    from PySide.QtCore import Qt
-    def fmt(x, *args):
-        return x % args
-    print("Qt binding: PySide")
-except ImportError:
-    from PyQt4 import QtCore, QtGui
-    from PyQt4.QtCore import Qt
-    print("Qt binding: PyQt4")
-    def fmt(x, *args):
-        # QString in PyQt4 doesn't support the % operation
-        return unicode(x) % args
+
+from PySide2.QtWidgets import QMainWindow , QApplication, QAction, QListView, QTableView, QCheckBox, QLabel
+from PySide2.QtGui import QTextCursor 
+from PySide2.QtCore import QStringListModel
+from PySide2 import QtWidgets as QtGui
+from PySide2 import QtCore
+from PySide2.QtCore import Qt
+def fmt(x, *args):
+    return x % args
 import datetime
 import functools
 import io
@@ -303,9 +299,9 @@ class StatsManager:
         self.history = History(self)
 
         self.model = StatsModel(self)
-        self.view = QtGui.QTableView(window)
+        self.view = QTableView(window)
         self.view.setModel(self.model)
-        self.cumulative_checkbox = QtGui.QCheckBox(window.tr("Cumulative sizes"), window)
+        self.cumulative_checkbox = QCheckBox(window.tr("Cumulative sizes"), window)
         self.group_by = QtGui.QComboBox(window)
         self.group_by.addItems([
             window.tr("Filename"),
@@ -313,8 +309,8 @@ class StatsManager:
             window.tr("Traceback"),
         ])
 
-        self.filters_label = QtGui.QLabel(window)
-        self.summary = QtGui.QLabel(window)
+        self.filters_label = QLabel(window)
+        self.summary = QLabel(window)
         self.view.verticalHeader().hide()
         self.view.resizeColumnsToContents()
         self.view.setSortingEnabled(True)
@@ -565,8 +561,8 @@ class SourceCodeManager:
         self.text_edit.setReadOnly(True)
         # FIXME: write an optimized model
         self.traceback = None
-        self.traceback_model = QtGui.QStringListModel()
-        self.traceback_view = QtGui.QListView(window)
+        self.traceback_model = QStringListModel()
+        self.traceback_view = QListView(window)
         self.traceback_view.setModel(self.traceback_model)
         self.traceback_view.setEditTriggers(QtGui.QAbstractItemView.NoEditTriggers)
         window.connect(self.traceback_view.selectionModel(), QtCore.SIGNAL("selectionChanged(const QItemSelection&, const QItemSelection&)"), self.frame_selection_changed)
@@ -641,8 +637,8 @@ class SourceCodeManager:
         doc = self.text_edit.document()
         # FIXME: complexity in O(number of lines)?
         block = doc.findBlockByLineNumber(lineno - 1)
-        cursor = QtGui.QTextCursor(block)
-        cursor.select(QtGui.QTextCursor.BlockUnderCursor)
+        cursor = QTextCursor(block)
+        cursor.select(QTextCursor.BlockUnderCursor)
         # FIXME: complexity in O(number of lines)?
         self.text_edit.setTextCursor(cursor)
 
@@ -656,16 +652,16 @@ class SourceCodeManager:
             self.set_line_number(frame.lineno)
 
 
-class MainWindow(QtGui.QMainWindow):
+class MainWindow(QMainWindow):
     def __init__(self, app, filenames):
-        QtGui.QMainWindow.__init__(self)
+        QMainWindow.__init__(self)
         self.setGeometry(300, 200, 1300, 450)
         self.setWindowTitle("Tracemalloc")
 
         # actions
-        action_previous = QtGui.QAction(self.tr("Previous"), self)
+        action_previous = QAction(self.tr("Previous"), self)
         self.connect(action_previous, QtCore.SIGNAL("triggered(bool)"), self.go_previous)
-        action_next = QtGui.QAction(self.tr("Next"), self)
+        action_next = QAction(self.tr("Next"), self)
         self.connect(action_next, QtCore.SIGNAL("triggered(bool)"), self.go_next)
 
         # toolbar
@@ -682,10 +678,10 @@ class MainWindow(QtGui.QMainWindow):
 
         # snapshots
         hbox1 = QtGui.QHBoxLayout()
-        hbox1.addWidget(QtGui.QLabel(self.tr("Snapshot:")))
+        hbox1.addWidget(QLabel(self.tr("Snapshot:")))
         hbox1.addWidget(self.snapshots.combo1)
         hbox2 = QtGui.QHBoxLayout()
-        hbox2.addWidget(QtGui.QLabel(self.tr("compared to:")))
+        hbox2.addWidget(QLabel(self.tr("compared to:")))
         hbox2.addWidget(self.snapshots.combo2)
 
         vbox = QtGui.QVBoxLayout()
@@ -700,7 +696,7 @@ class MainWindow(QtGui.QMainWindow):
 
         # Group by
         hbox = QtGui.QHBoxLayout()
-        hbox.addWidget(QtGui.QLabel(self.tr("Group by:")))
+        hbox.addWidget(QLabel(self.tr("Group by:")))
         hbox.addWidget(self.stats.group_by)
         hbox.addWidget(self.stats.cumulative_checkbox)
         hbox.addWidget(self.stats.filters_label)
@@ -746,7 +742,7 @@ class Application:
             sys.exit(1)
 
         # Create a Qt application
-        self.app = QtGui.QApplication(sys.argv)
+        self.app = QApplication(sys.argv)
         self.window = MainWindow(self, filenames)
 
     def main(self):
